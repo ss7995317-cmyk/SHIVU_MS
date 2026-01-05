@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hand Gesture Control System</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #581c87 50%, #0f172a 100%);
+            min-height: 100vh;
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .header-icon {
+            display: inline-block;
+            background: linear-gradient(135deg, #a855f7, #ec4899);
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(168, 85, 247, 0.5);
+            transform: perspective(1000px) rotateX(10deg);
+            transition: transform 0.3s ease;
+            margin-bottom: 20px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: perspective(1000px) rotateX(10deg) translateY(0px); }
+            50% { transform: perspective(1000px) rotateX(10deg) translateY(-10px); }
+        }
+
+        .header-icon:hover {
+            transform: perspective(1000px) rotateX(0deg) scale(1.1);
+            animation: none;
+        }
+
+        .header-icon svg {
+            width: 60px;
+            height: 60px;
+            fill: white;
+        }
+
+        h1 {
+            font-size: 3.5em;
+            background: linear-gradient(135deg, #a855f7, #ec4899, #f97316);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+            font-weight: 800;
+            animation: gradientShift 3s ease infinite;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { filter: hue-rotate(0deg); }
+            50% { filter: hue-rotate(20deg); }
+        }
+
+        .subtitle {
+            font-size: 1.2em;
+            color: #cbd5e1;
+            opacity: 0.9;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .video-container {
+            background: rgba(15, 23, 42, 0.8);
+            border-radius: 30px;
+            padding: 30px;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5),
+                        inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .video-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #a855f7, #ec4899, #f97316);
+        }
+
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: #0f172a;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.5);
+        }
+
+        #videoElement {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+            transform: scaleX(-1);
+        }
+
+        #canvasElement {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+        }
+
+        #videoElement.active {
+            display: block;
+        }
+
+        .video-placeholder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #64748b;
+        }
+
+        .video-placeholder svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.05); }
+        }
+
+        .status-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+        }
+
+        .status-badge {
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-size: 0.9em;
+            font-weight: 600;
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-badge.active {
+            background: rgba(34, 197, 94, 0.3);
+            border: 2px solid #22c55e;
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+        }
+
+        .status-badge.inactive {
+            background: rgba(239, 68, 68, 0.3);
+            border: 2px solid #ef4444;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: statusPulse 2s infinite;
+        }
+
+        .status-dot.active {
+            background: #22c55e;
+            box-shadow: 0 0 10px #22c55e;
+        }
+
+        .status-dot.inactive {
+            background: #ef4444;
+        }
+
+        @keyframes statusPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        .gesture-indicator {
+            padding: 10px 20px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            background: rgba(168, 85, 247, 0.3);
+            border: 2px solid #a855f7;
+            font-weight: 600;
+            min-width: 150px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .gesture-indicator.active {
+            background: rgba(168, 85, 247, 0.5);
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+            transform: scale(1.05);
+        }
+
+        .control-panel {
+            background: rgba(15, 23, 42, 0.8);
+            border-radius: 30px;
+            padding: 30px;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5),
+                        inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .control-title {
+            font-size: 1.8em;
+            margin-bottom: 30px;
+            font-weight: 700;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: rgba(168, 85, 247, 0.1);
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid rgba(168, 85, 247, 0.3);
+        }
+
+        .stat-label {
+            font-size: 0.85em;
+            color: #94a3b8;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #a855f7;
+        }
+
+        .btn {
+            padding: 18px 40px;
+            border: none;
+            border-radius: 16px;
+            font-size: 1.1em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .btn:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .btn-start {
+            background: linear-gradient(135deg, #22c55e, #10b981);
+            color: white;
+            box-shadow: 0 15px 40px rgba(34, 197, 94, 0.4);
+            margin-bottom: 20px;
+        }
+
+        .btn-start:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 20px 50px rgba(34, 197, 94, 0.6);
+        }
+
+        .btn-stop {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            box-shadow: 0 15px 40px rgba(239, 68, 68, 0.4);
+        }
+
+        .btn-stop:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 20px 50px rgba(239, 68, 68, 0.6);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn svg {
+            width: 24px;
+            height: 24px;
+            z-index: 1;
+        }
+
+        .btn span {
+            z-index: 1;
+        }
+
+        .gestures-title {
+            font-size: 2em;
+            margin-bottom: 30px;
+            text-align: center;
+            font-weight: 700;
+        }
+
+        .gestures-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 25px;
+        }
+
+        .gesture-card {
+            background: rgba(15, 23, 42, 0.8);
+            border-radius: 25px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4),
+                        inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            transition: all 0.4s ease;
+            position: relative;
+            overflow: hidden;
+            transform: perspective(1000px) rotateX(5deg);
+        }
+
+        .gesture-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 5px;
+            transition: height 0.4s ease;
+        }
+
+        .gesture-card:hover {
+            transform: perspective(1000px) rotateX(0deg) translateY(-10px);
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+        }
+
+        .gesture-card:hover::before {
+            height: 100%;
+            opacity: 0.1;
+        }
+
+        .gesture-card.blue::before { background: linear-gradient(135deg, #3b82f6, #06b6d4); }
+        .gesture-card.green::before { background: linear-gradient(135deg, #22c55e, #10b981); }
+        .gesture-card.red::before { background: linear-gradient(135deg, #ef4444, #f43f5e); }
+        .gesture-card.yellow::before { background: linear-gradient(135deg, #eab308, #f59e0b); }
+        .gesture-card.purple::before { background: linear-gradient(135deg, #a855f7, #ec4899); }
+
+        .gesture-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .gesture-card.blue .gesture-icon { background: linear-gradient(135deg, #3b82f6, #06b6d4); }
+        .gesture-card.green .gesture-icon { background: linear-gradient(135deg, #22c55e, #10b981); }
+        .gesture-card.red .gesture-icon { background: linear-gradient(135deg, #ef4444, #f43f5e); }
+        .gesture-card.yellow .gesture-icon { background: linear-gradient(135deg, #eab308, #f59e0b); }
+        .gesture-card.purple .gesture-icon { background: linear-gradient(135deg, #a855f7, #ec4899); }
+
+        .gesture-icon svg {
+            width: 32px;
+            height: 32px;
+            fill: white;
+        }
+
+        .gesture-name {
+            font-size: 1.4em;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .gesture-desc {
+            color: #94a3b8;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+
+        .instructions-box {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(168, 85, 247, 0.1);
+            border-radius: 15px;
+            border-left: 4px solid #a855f7;
+        }
+
+        .instructions-box p {
+            font-size: 0.95em;
+            line-height: 1.8;
+            color: #cbd5e1;
+        }
+
+        .cursor-virtual {
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            background: #a855f7;
+            border-radius: 50%;
+            pointer-events: none;
+            box-shadow: 0 0 20px #a855f7;
+            transition: all 0.05s ease;
+            z-index: 5;
+            display: none;
+        }
+
+        @media (max-width: 968px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            h1 {
+                font-size: 2.5em;
+            }
+            
+            .gestures-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M20.5 6.5C20.5 7.88 19.38 9 18 9C16.62 9 15.5 7.88 15.5 6.5C15.5 5.12 16.62 4 18 4C19.38 4 20.5 5.12 20.5 6.5M10 6C10 7.66 8.66 9 7 9H6C4.34 9 3 7.66 3 6C3 4.34 4.34 3 6 3H7C8.66 3 10 4.34 10 6M21 14V22H19V17H17V22H15V14C15 12.9 15.9 12 17 12H19C20.11 12 21 12.9 21 14M9 12C10.1 12 11 12.89 11 14V22H9V15H5V22H3V14C3 12.89 3.9 12 5 12H9Z"/>
+                </svg>
+            </div>
+            <h1>Hand Gesture Control</h1>
+            <p class="subtitle">Control your computer with intuitive hand gestures powered by AI</p>
+        </div>
+
+        <div class="main-grid">
+            <div class="video-container">
+                <div class="video-wrapper">
+                    <video id="videoElement" autoplay playsinline></video>
+                    <canvas id="canvasElement"></canvas>
+                    <div class="cursor-virtual" id="virtualCursor"></div>
+                    <div class="video-placeholder" id="placeholder">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+                        </svg>
+                        <p>Camera feed will appear here</p>
+                    </div>
+                    <div class="status-overlay">
+                        <div class="status-badge inactive" id="statusBadge">
+                            <div class="status-dot inactive" id="statusDot"></div>
+                            <span id="statusText">Inactive</span>
+                        </div>
+                        <div class="gesture-indicator" id="gestureIndicator">
+                            Waiting...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <h2 class="control-title">System Control</h2>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Gestures Detected</div>
+                        <div class="stat-value" id="gestureCount">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">FPS</div>
+                        <div class="stat-value" id="fpsCounter">0</div>
+                    </div>
+                </div>
+
+                <button class="btn btn-start" id="startBtn">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    <span>Start Tracking</span>
+                </button>
+                <button class="btn btn-stop" id="stopBtn" style="display: none;">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6 6h12v12H6z"/>
+                    </svg>
+                    <span>Stop Tracking</span>
+                </button>
+                
+                <div class="instructions-box">
+                    <p>
+                        <strong>📋 Instructions:</strong><br>
+                        • Allow camera access when prompted<br>
+                        • Keep your hand visible in the frame<br>
+                        • Perform gestures clearly for best accuracy<br>
+                        • Close thumb for cursor control<br>
+                        • Use cooldown: 500ms between gestures
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="gestures-title">Available Gestures</h2>
+        <div class="gestures-grid">
+            <div class="gesture-card blue">
+                <div class="gesture-icon">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M13,9H18.5L13,3.5V9M6,2H14L20,8V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V4C4,2.89 4.89,2 6,2M15,18V16H6V18H15M18,14V12H6V14H18Z"/>
+                    </svg>
+                </div>
+                <div class="gesture-name">Cursor Move</div>
+                <div class="gesture-desc">Close your thumb (tip near palm) and use your index finger to smoothly move the cursor across the screen</div>
+            </div>
+
+            <div class="gesture-card green">
+                <div class="gesture-icon">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M4,2H20A2,2 0 0,1 22,4V16A2,2 0 0,1 20,18H16L12,22L8,18H4A2,2 0 0,1 2,16V4A2,2 0 0,1 4,2M4,4V16H8.83L12,19.17L15.17,16H20V4H4Z"/>
+                    </svg>
+                </div>
+                <div class="gesture-name">Left Click</div>
+                <div class="gesture-desc">Bend your index finger (angle < 40°) while keeping middle finger straight (angle > 100°) to perform left click</div>
+            </div>
+
+            <div class="gesture-card red">
+                <div class="gesture-icon">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M4,2H20A2,2 0 0,1 22,4V16A2,2 0 0,1 20,18H16L12,22L8,18H4A2,2 0 0,1 2,16V4A2,2 0 0,1 4,2M18.5,4.5L17,3L12,8L7,3L5.5,4.5L10.5,9.5L5.5,14.5L7,16L12,11L17,16L18.5,14.5L13.5,9.5L18.5,4.5Z"/>
+                    </svg>
+                </div>
+                <div class="gesture-name">Right Click</div>
+                <div class="gesture-desc">Bend your middle finger (angle < 40°) while keeping index finger straight (angle > 100°) to perform right click</div>
+            </div>
+
+            <div class="gesture-card yellow">
+                <div class="gesture-icon">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,12.5A1.5,1.5 0 0,1 10.5,11A1.5,1.5 0 0,1 12,9.5A1.5,1.5 0 0,1 13.5,11A1.5,1.5 0 0,1 12,12.5M12,7.2C9.9,7.2 8.2,8.9 8.2,11C8.2,14 12,17.5 12,17.5C12,17.5 15.8,14 15.8,11C15.8,8.9 14.1,7.2 12,7.2Z"/>
+                    </svg>
+                </div>
+                <div class="gesture-name">Double Click</div>
+                <div class="gesture-desc">Bend both index and middle fingers together (both angles < 40°) to execute a double click action</div>
+            </div>
+
+            <div class="gesture-card purple">
+                <div class="gesture-icon">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M4,4H7L9,2H15L17,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9Z"/>
+                    </svg>
+                </div>
+                <div class="gesture-name">Screenshot</div>
+                <div class="gesture-desc">Bend your ring finger (angle < 40°) to capture and save a screenshot of your current screen instantly</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // MediaPipe Hands Setup
+        const videoElement = document.getElementById('videoElement');
+        const canvasElement = document.getElementById('canvasElement');
+        const canvasCtx = canvasElement.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusBadge = document.getElementById('statusBadge');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const gestureIndicator = document.getElementById('gestureIndicator');
+        const placeholder = document.getElementById('placeholder');
+        const gestureCountElement = document.getElementById('gestureCount');
+        const fpsCounter = document.getElementById('fpsCounter');
+        const virtualCursor = document.getElementById('virtualCursor');
+
+        let hands;
+        let camera;
+        let isTracking = false;
+        let gestureCount = 0;
+        let lastGestureTime = 0;
+        const gestureCooldown = 500;
+        let frameCount = 0;
+        let lastFpsTime = Date.now();
+
+        // Utility Functions
+        function getDistance(point1, point2) {
+            const dx = point1.x - point2.x;
+            const dy = point1.y - point2.y;
+            return Math.sqrt(dx * dx + dy * dy) * 1000;
+        }
+
+        function getAngle(point1, point2, point3) {
+            const radians = Math.atan2(point3.y - point2.y, point3.x - point2.x) -
+                          Math.atan2(point1.y - point2.y, point1.x - point2.x);
+            let angle = Math.abs(radians * 180 / Math.PI);
+            if (angle > 180) angle = 360 - angle;
+            return angle;
+        }
+
+        function isThumbClosed(landmarks) {
+            const thumbTip = landmarks[4];
+            const indexMcp = landmarks[5];
+            const dist = getDistance(thumbTip, indexMcp);
+            return dist < 30;
+        }
+
+        function isLeftClick(landmarks, thumbIndexDist) {
+            const indexAngle = getAngle(landmarks[5], landmarks[6], landmarks[8]);
+            const middleAngle = getAngle(landmarks[9], landmarks[10], landmarks[12]);
+            return indexAngle < 40 && middleAngle > 100 && thumbIndexDist > 60;
+        }
+
+        function isRightClick(landmarks, thumbIndexDist) {
+            const middleAngle = getAngle(landmarks[9], landmarks[10], landmarks[12]);
+            const indexAngle = getAngle(landmarks[5], landmarks[6], landmarks[8]);
+            return middleAngle < 40 && indexAngle > 100 && thumbIndexDist > 60;
+        }
+
+        function isDoubleClick(landmarks, thumbIndexDist) {
+            const indexAngle = getAngle(landmarks[5], landmarks[6], landmarks[8]);
+            const middleAngle = getAngle(landmarks[9], landmarks[10], landmarks[12]);
+            return indexAngle < 40 && middleAngle < 40 && thumbIndexDist > 60;
+        }
+
+        function isScreenshot(landmarks, thumbIndexDist) {
+            const ringAngle = getAngle(landmarks[13], landmarks[14], landmarks[16]);
+            return ringAngle < 40 && thumbIndexDist > 60;
+        }
+
+        function canPerformGesture() {
+            const currentTime = Date.now();
+            if (currentTime - lastGestureTime >= gestureCooldown) {
+                lastGestureTime = currentTime;
+                return true;
+            }
+            return false;
+        }
+
+        function updateGestureIndicator(gesture) {
+            gestureIndicator.textContent = gesture;
+            gestureIndicator.classList.add('active');
+            setTimeout(() => {
+                gestureIndicator.classList.remove('active');
+                if (isTracking) {
+                    gestureIndicator.textContent = 'Tracking...';
+                }
+            }, 800);
+        }
+
+        function updateFPS() {
+            frameCount++;
+            const currentTime = Date.now();
+            const elapsed = currentTime - lastFpsTime;
+            
+            if (elapsed >= 1000) {
+                const fps = Math.round((frameCount * 1000) / elapsed);
+                fpsCounter.textContent = fps;
+                frameCount = 0;
+                lastFpsTime = currentTime;
+            }
+        }
+
+        function detectGesture(landmarks) {
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            const thumbIndexDist = getDistance(thumbTip, indexTip);
+
+            // Check for cursor movement (thumb closed)
+            if (isThumbClosed(landmarks)) {
+                const x = indexTip.x * canvasElement.width;
+                const y = indexTip.y * canvasElement.height;
+                virtualCursor.style.left = x + 'px';
+                virtualCursor.style.top = y + 'px';
+                virtualCursor.style.display = 'block';
+                return 'Cursor Moving';
+            } else {
+                virtualCursor.style.display = 'none';
+            }
+
+            // Check other gestures with cooldown
+            if (!canPerformGesture()) {
+                return null;
+            }
+
+            if (isDoubleClick(landmarks, thumbIndexDist)) {
+                gestureCount++;
+                gestureCountElement.textContent = gestureCount;
+                console.log('Double Click detected');
+                return '✌️ Double Click';
+            }
+
+            if (isLeftClick(landmarks, thumbIndexDist)) {
+                gestureCount++;
+                gestureCountElement.textContent = gestureCount;
+                console.log('Left Click detected');
+                return '☝️ Left Click';
+            }
+
+            if (isRightClick(landmarks, thumbIndexDist)) {
+                gestureCount++;
+                gestureCountElement.textContent = gestureCount;
+                console.log('Right Click detected');
+                return '✋ Right Click';
+            }
+
+            if (isScreenshot(landmarks, thumbIndexDist)) {
+                gestureCount++;
+                gestureCountElement.textContent = gestureCount;
+                console.log('Screenshot detected');
+                return '📸 Screenshot';
+            }
+
+            return null;
+        }
+
+        function onResults(results) {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
+                        color: '#a855f7',
+                        lineWidth: 3
+                    });
+                    drawLandmarks(canvasCtx, landmarks, {
+                        color: '#ec4899',
+                        fillColor: '#fff',
+                        radius: 4,
+                        lineWidth: 2
+                    });
+
+                    const gesture = detectGesture(landmarks);
+                    if (gesture) {
+                        updateGestureIndicator(gesture);
+                    }
+                }
+            } else {
+                virtualCursor.style.display = 'none';
+            }
+
+            canvasCtx.restore();
+            updateFPS();
+        }
+
+        async function startTracking() {
+            try {
+                hands = new Hands({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                    }
+                });
+
+                hands.setOptions({
+                    maxNumHands: 1,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.7,
+                    minTrackingConfidence: 0.7
+                });
+
+                hands.onResults(onResults);
+
+                camera = new Camera(videoElement, {
+                    onFrame: async () => {
+                        if (isTracking) {
+                            await hands.send({ image: videoElement });
+                        }
+                    },
+                    width: 640,
+                    height: 480
+                });
+
+                await camera.start();
+
+                isTracking = true;
+                videoElement.classList.add('active');
+                placeholder.style.display = 'none';
+                
+                statusBadge.classList.remove('inactive');
+                statusBadge.classList.add('active');
+                statusDot.classList.remove('inactive');
+                statusDot.classList.add('active');
+                statusText.textContent = 'Active';
+                
+                gestureIndicator.textContent = 'Tracking...';
+                
+                startBtn.style.display = 'none';
+                stopBtn.style.display = 'flex';
+
+            } catch (error) {
+                console.error('Error starting tracking:', error);
+                alert('Error accessing camera. Please ensure camera permissions are granted.');
+            }
+        }
+
+        function stopTracking() {
+            isTracking = false;
+            
+            if (camera) {
+                camera.stop();
+            }
+            
+            videoElement.classList.remove('active');
+            placeholder.style.display = 'block';
+            virtualCursor.style.display = 'none';
+            
+            statusBadge.classList.remove('active');
+            statusBadge.classList.add('inactive');
+            statusDot.classList.remove('active');
+            statusDot.classList.add('inactive');
+            statusText.textContent = 'Inactive';
+            
+            gestureIndicator.textContent = 'Waiting...';
+            gestureIndicator.classList.remove('active');
+            
+            startBtn.style.display = 'flex';
+            stopBtn.style.display = 'none';
+            
+            fpsCounter.textContent = '0';
+        }
+
+        // Event Listeners
+        startBtn.addEventListener('click', startTracking);
+        stopBtn.addEventListener('click', stopTracking);
+    </script>
+</body>
+</html>
